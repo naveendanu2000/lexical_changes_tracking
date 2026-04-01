@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import type { AcceptedSelectionOffsets, BaseChar } from './tracking';
 import {
+  applyAcceptedDocument,
   applyTrackedDocument,
   buildTrackedChars,
   collectAcceptedChars,
@@ -9,16 +10,24 @@ import {
   getAcceptedSelectionOffsets,
   getCurrentSelection,
   restoreSelectionFromOffsets,
+  serializeTrackedWordsFromChars,
+  type BackendTrackedWord,
 } from './tracking';
+
+export type EditorDisplayMode = 'accepted' | 'tracked';
 
 type TrackedChangesPluginProps = {
   currentUserName?: string;
+  displayMode: EditorDisplayMode;
   onAcceptedTextChange?: (value: string) => void;
+  onTrackedWordsChange?: (value: BackendTrackedWord[]) => void;
 };
 
 export function TrackedChangesPlugin({
   currentUserName = 'Current user',
+  displayMode,
   onAcceptedTextChange,
+  onTrackedWordsChange,
 }: TrackedChangesPluginProps) {
   const [editor] = useLexicalComposerContext();
   const baselineRef = useRef<BaseChar[] | null>(null);
@@ -42,7 +51,11 @@ export function TrackedChangesPlugin({
           deletedBy: currentUserName,
           insertedCreatedBy: currentUserName,
         });
-        applyTrackedDocument(tracked);
+        if (displayMode === 'accepted') {
+          applyAcceptedDocument(tracked);
+        } else {
+          applyTrackedDocument(tracked);
+        }
         setSummary({
           deleted: tracked.filter((item) => item.status === 'deleted').length,
           inserted: tracked.filter((item) => item.status === 'inserted').length,
@@ -52,6 +65,16 @@ export function TrackedChangesPlugin({
           acceptedChars
             .map((item) => item.char)
             .join(''),
+        );
+        onTrackedWordsChange?.(
+          serializeTrackedWordsFromChars(
+            tracked.map((item) => ({
+              char: item.char,
+              createdBy: item.createdBy,
+              deletedBy: item.deletedBy,
+              status: item.status,
+            })),
+          ),
         );
       },
       {
@@ -98,7 +121,11 @@ export function TrackedChangesPlugin({
       applyingRef.current = true;
       editor.update(
         () => {
-          applyTrackedDocument(tracked);
+          if (displayMode === 'accepted') {
+            applyAcceptedDocument(tracked);
+          } else {
+            applyTrackedDocument(tracked);
+          }
           restoreSelectionFromOffsets(nextSelection);
         },
         {
@@ -115,8 +142,48 @@ export function TrackedChangesPlugin({
       setSummary(counts);
       setAcceptedText(nextAcceptedText);
       onAcceptedTextChange?.(nextAcceptedText);
+      onTrackedWordsChange?.(
+        serializeTrackedWordsFromChars(
+          tracked.map((item) => ({
+            char: item.char,
+            createdBy: item.createdBy,
+            deletedBy: item.deletedBy,
+            status: item.status,
+          })),
+        ),
+      );
     });
-  }, [currentUserName, editor, onAcceptedTextChange]);
+  }, [currentUserName, displayMode, editor, onAcceptedTextChange, onTrackedWordsChange]);
+
+  useEffect(() => {
+    const baseline = baselineRef.current;
+    const acceptedChars = currentAcceptedRef.current;
+
+    if (!baseline) {
+      return;
+    }
+
+    editor.update(
+      () => {
+        const selectionOffsets = getAcceptedSelectionOffsets(getCurrentSelection());
+        const tracked = buildTrackedChars(baseline, acceptedChars, {
+          deletedBy: currentUserName,
+          insertedCreatedBy: currentUserName,
+        });
+
+        if (displayMode === 'accepted') {
+          applyAcceptedDocument(tracked);
+        } else {
+          applyTrackedDocument(tracked);
+        }
+
+        restoreSelectionFromOffsets(selectionOffsets);
+      },
+      {
+        tag: 'track-changes:apply',
+      },
+    );
+  }, [currentUserName, displayMode, editor]);
 
   const summaryText = useMemo(
     () => `retained: ${summary.retained} | inserted: ${summary.inserted} | deleted: ${summary.deleted}`,
@@ -126,6 +193,8 @@ export function TrackedChangesPlugin({
   return (
     <div className="status-panel">
       Current accepted text: <code>{acceptedText || '(empty)'}</code>
+      <br />
+      View mode: <code>{displayMode}</code>
       <br />
       Character summary: <code>{summaryText}</code>
     </div>

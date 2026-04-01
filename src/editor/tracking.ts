@@ -996,6 +996,11 @@ type SaveTrackedChar = {
   status: TrackStatus;
 };
 
+export function applyAcceptedDocument(trackedChars: TrackedChar[]): void {
+  const visibleChars = trackedChars.filter((char) => char.status !== 'deleted');
+  applyTrackedDocument(visibleChars);
+}
+
 export function collectTrackedCharsForSave(): SaveTrackedChar[] {
   const root = $getRoot();
   const paragraphs = root.getChildren().filter($isParagraphNode);
@@ -1039,8 +1044,7 @@ export function collectTrackedCharsForSave(): SaveTrackedChar[] {
   return chars;
 }
 
-export function serializeTrackedWordsForBackend(): BackendTrackedWord[] {
-  const chars = collectTrackedCharsForSave();
+export function serializeTrackedWordsFromChars(chars: SaveTrackedChar[]): BackendTrackedWord[] {
   const words: BackendTrackedWord[] = [];
   let currentWord = '';
   let currentType: TrackStatus | null = null;
@@ -1103,6 +1107,10 @@ export function serializeTrackedWordsForBackend(): BackendTrackedWord[] {
 
   flush();
   return words;
+}
+
+export function serializeTrackedWordsForBackend(): BackendTrackedWord[] {
+  return serializeTrackedWordsFromChars(collectTrackedCharsForSave());
 }
 
 export function getAcceptedText(): string {

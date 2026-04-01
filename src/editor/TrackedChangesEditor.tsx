@@ -14,7 +14,7 @@ import {
   type BackendTrackedWord,
 } from './tracking';
 import { ToolbarPlugin } from './ToolbarPlugin';
-import { TrackedChangesPlugin } from './TrackedChangesPlugin';
+import { TrackedChangesPlugin, type EditorDisplayMode } from './TrackedChangesPlugin';
 
 type TrackedChangesEditorProps = {
   currentUserName?: string;
@@ -38,6 +38,8 @@ export function TrackedChangesEditor({
   const [acceptedText, setAcceptedText] = useState(
     initialWords ? getAcceptedTextFromBackendWords(initialWords) : initialText,
   );
+  const [displayMode, setDisplayMode] = useState<EditorDisplayMode>('tracked');
+  const [trackedWordsPayload, setTrackedWordsPayload] = useState<BackendTrackedWord[]>(initialWords ?? []);
 
   const initialConfig: InitialConfigType = {
     editorState: () => {
@@ -65,11 +67,18 @@ export function TrackedChangesEditor({
   };
 
   return (
-    <div className="editor-shell">
+    <div className="editor-shell" data-display-mode={displayMode}>
       <LexicalComposer initialConfig={initialConfig}>
         <div className="editor-layout">
           <div className="editor-main">
-            <ToolbarPlugin onSaveAccepted={onSaveAccepted} onSaveChanges={onSaveChanges} />
+            <ToolbarPlugin
+              acceptedText={acceptedText}
+              displayMode={displayMode}
+              onDisplayModeChange={setDisplayMode}
+              onSaveAccepted={onSaveAccepted}
+              onSaveChanges={onSaveChanges}
+              trackedWordsPayload={trackedWordsPayload}
+            />
             <div className="editor-inner">
               <RichTextPlugin
                 contentEditable={<ContentEditable className="editor-input" />}
@@ -77,7 +86,12 @@ export function TrackedChangesEditor({
                 placeholder={<Placeholder />}
               />
               <HistoryPlugin />
-              <TrackedChangesPlugin currentUserName={currentUserName} onAcceptedTextChange={setAcceptedText} />
+              <TrackedChangesPlugin
+                currentUserName={currentUserName}
+                displayMode={displayMode}
+                onAcceptedTextChange={setAcceptedText}
+                onTrackedWordsChange={setTrackedWordsPayload}
+              />
             </div>
           </div>
           <HoverMetadataPlugin />
