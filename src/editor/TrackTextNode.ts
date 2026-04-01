@@ -6,6 +6,7 @@ export type TrackStatus = 'retained' | 'inserted' | 'deleted';
 export type SerializedTrackTextNode = Spread<
   {
     createdBy: string;
+    deletedBy: string | null;
     isAnchor: boolean;
     formatChanged: boolean;
     trackStatus: TrackStatus;
@@ -17,6 +18,7 @@ export type SerializedTrackTextNode = Spread<
 
 export class TrackTextNode extends TextNode {
   __createdBy: string;
+  __deletedBy: string | null;
   __trackStatus: TrackStatus;
   __formatChanged: boolean;
   __isAnchor: boolean;
@@ -31,6 +33,7 @@ export class TrackTextNode extends TextNode {
       node.__trackStatus,
       node.__formatChanged,
       node.__createdBy,
+      node.__deletedBy,
       node.__isAnchor,
       node.__key,
     );
@@ -47,6 +50,7 @@ export class TrackTextNode extends TextNode {
       serializedNode.trackStatus,
       serializedNode.formatChanged,
       serializedNode.createdBy,
+      serializedNode.deletedBy,
       serializedNode.isAnchor,
     );
     node.setFormat(serializedNode.format);
@@ -61,11 +65,13 @@ export class TrackTextNode extends TextNode {
     trackStatus: TrackStatus,
     formatChanged = false,
     createdBy = '',
+    deletedBy: string | null = null,
     isAnchor = false,
     key?: NodeKey,
   ) {
     super(text, key);
     this.__createdBy = createdBy;
+    this.__deletedBy = deletedBy;
     this.__trackStatus = trackStatus;
     this.__formatChanged = formatChanged;
     this.__isAnchor = isAnchor;
@@ -82,6 +88,7 @@ export class TrackTextNode extends TextNode {
     if (
       updated ||
       prevNode.__createdBy !== this.__createdBy ||
+      prevNode.__deletedBy !== this.__deletedBy ||
       prevNode.__trackStatus !== this.__trackStatus ||
       prevNode.__formatChanged !== this.__formatChanged ||
       prevNode.__isAnchor !== this.__isAnchor
@@ -95,6 +102,7 @@ export class TrackTextNode extends TextNode {
     return {
       ...super.exportJSON(),
       createdBy: this.__createdBy,
+      deletedBy: this.__deletedBy,
       isAnchor: this.__isAnchor,
       formatChanged: this.__formatChanged,
       trackStatus: this.__trackStatus,
@@ -109,6 +117,10 @@ export class TrackTextNode extends TextNode {
 
   getCreatedBy(): string {
     return this.getLatest().__createdBy;
+  }
+
+  getDeletedBy(): string | null {
+    return this.getLatest().__deletedBy;
   }
 
   getFormatChanged(): boolean {
@@ -131,6 +143,12 @@ export class TrackTextNode extends TextNode {
   setCreatedBy(createdBy: string): this {
     const writable = this.getWritable();
     writable.__createdBy = createdBy;
+    return writable;
+  }
+
+  setDeletedBy(deletedBy: string | null): this {
+    const writable = this.getWritable();
+    writable.__deletedBy = deletedBy;
     return writable;
   }
 
@@ -161,9 +179,15 @@ export class TrackTextNode extends TextNode {
   updateTrackedAttributes(dom: HTMLElement): void {
     dom.dataset.trackStatus = this.getTrackStatus();
     dom.dataset.createdBy = this.getCreatedBy();
+    dom.dataset.deletedBy = this.getDeletedBy() ?? '';
     dom.dataset.formatChange = this.getFormatChanged() ? 'true' : 'false';
     dom.dataset.trackAnchor = this.isAnchor() ? 'true' : 'false';
-    dom.title = this.isAnchor() || !this.getCreatedBy() ? '' : `Created by: ${this.getCreatedBy()}`;
+    dom.title =
+      this.isAnchor() || !this.getCreatedBy()
+        ? ''
+        : this.getTrackStatus() === 'deleted' && this.getDeletedBy()
+          ? `Created by: ${this.getCreatedBy()}\nDeleted by: ${this.getDeletedBy()}`
+          : `Created by: ${this.getCreatedBy()}`;
   }
 }
 
@@ -172,9 +196,10 @@ export function $createTrackTextNode(
   trackStatus: TrackStatus,
   formatChanged = false,
   createdBy = '',
+  deletedBy: string | null = null,
   isAnchor = false,
 ): TrackTextNode {
-  const node = new TrackTextNode(text, trackStatus, formatChanged, createdBy, isAnchor);
+  const node = new TrackTextNode(text, trackStatus, formatChanged, createdBy, deletedBy, isAnchor);
   if (trackStatus === 'deleted') {
     node.setMode('token');
   }

@@ -2,6 +2,7 @@ import { $getSelection, $isRangeSelection, FORMAT_TEXT_COMMAND, SELECTION_CHANGE
 import { $patchStyleText } from '@lexical/selection';
 import { useEffect, useState } from 'react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
+import { getAcceptedText, serializeTrackedWordsForBackend, type BackendTrackedWord } from './tracking';
 
 type FormatState = {
   bold: boolean;
@@ -33,7 +34,12 @@ function FormatButton({
   );
 }
 
-export function ToolbarPlugin() {
+type ToolbarPluginProps = {
+  onSaveAccepted?: (payload: { acceptedText: string; lexicalState: unknown }) => void;
+  onSaveChanges?: (payload: BackendTrackedWord[]) => void;
+};
+
+export function ToolbarPlugin({ onSaveAccepted, onSaveChanges }: ToolbarPluginProps) {
   const [editor] = useLexicalComposerContext();
   const [formatState, setFormatState] = useState<FormatState>(DEFAULT_FORMAT_STATE);
   const [fontColor, setFontColor] = useState('#0f172a');
@@ -68,6 +74,30 @@ export function ToolbarPlugin() {
       const selection = $getSelection();
       if ($isRangeSelection(selection)) {
         $patchStyleText(selection, styles);
+      }
+    });
+  };
+
+  const handleSaveAccepted = () => {
+    editor.getEditorState().read(() => {
+      const payload = {
+        acceptedText: getAcceptedText(),
+        lexicalState: editor.getEditorState().toJSON(),
+      };
+
+      onSaveAccepted?.(payload);
+      if (!onSaveAccepted) {
+        console.log('save', payload);
+      }
+    });
+  };
+
+  const handleSaveChanges = () => {
+    editor.getEditorState().read(() => {
+      const payload = serializeTrackedWordsForBackend();
+      onSaveChanges?.(payload);
+      if (!onSaveChanges) {
+        console.log('save_changes', payload);
       }
     });
   };
@@ -119,6 +149,14 @@ export function ToolbarPlugin() {
           />
           Highlight
         </label>
+      </div>
+      <div className="toolbar-group toolbar-actions">
+        <button className="toolbar-button toolbar-button--accent" type="button" onClick={handleSaveAccepted}>
+          Save
+        </button>
+        <button className="toolbar-button toolbar-button--accent" type="button" onClick={handleSaveChanges}>
+          Save Changes
+        </button>
       </div>
     </div>
   );

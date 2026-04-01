@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { TrackedChangesEditor } from './editor/TrackedChangesEditor';
+import type { BackendTrackedWord } from './editor/tracking';
 
 const backendWords = [
   { word: 'This', type: 'retained', created_by: 'Aarav' },
@@ -12,12 +14,15 @@ const backendWords = [
   { word: 'word', type: 'retained', created_by: 'Aarav' },
   { word: 'to', type: 'retained', created_by: 'Aarav' },
   { word: 'see', type: 'retained', created_by: 'Aarav' },
-  { word: 'who', type: 'deleted', created_by: 'Neha' },
+  { word: 'who', type: 'deleted', created_by: 'Neha', deleted_by: 'Naveen' },
   { word: 'created', type: 'retained', created_by: 'Aarav' },
   { word: 'it.', type: 'retained', created_by: 'Aarav' },
 ] as const;
 
 export default function App() {
+  const [acceptedPayload, setAcceptedPayload] = useState('');
+  const [changesPayload, setChangesPayload] = useState('');
+
   return (
     <main className="app-shell">
       <section className="hero-card">
@@ -27,7 +32,26 @@ export default function App() {
           The editor now accepts backend word records with `word`, `type`, and `created_by`. Hover any tracked word to
           see who created it.
         </p>
-        <TrackedChangesEditor currentUserName="Naveen" initialWords={[...backendWords]} />
+        <TrackedChangesEditor
+          currentUserName="Naveen"
+          initialWords={[...backendWords]}
+          onSaveAccepted={(payload) => {
+            setAcceptedPayload(JSON.stringify(payload, null, 2));
+          }}
+          onSaveChanges={(payload: BackendTrackedWord[]) => {
+            setChangesPayload(JSON.stringify(payload, null, 2));
+          }}
+        />
+        <section className="payload-grid">
+          <div className="payload-card">
+            <p className="payload-title">Save payload</p>
+            <pre>{acceptedPayload || 'Click Save to capture the accepted content payload.'}</pre>
+          </div>
+          <div className="payload-card">
+            <p className="payload-title">Save Changes payload</p>
+            <pre>{changesPayload || 'Click Save Changes to capture the tracked backend payload.'}</pre>
+          </div>
+        </section>
       </section>
     </main>
   );

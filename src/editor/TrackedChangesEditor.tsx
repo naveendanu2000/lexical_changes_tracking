@@ -20,6 +20,8 @@ type TrackedChangesEditorProps = {
   currentUserName?: string;
   initialText?: string;
   initialWords?: BackendTrackedWord[];
+  onSaveAccepted?: (payload: { acceptedText: string; lexicalState: unknown }) => void;
+  onSaveChanges?: (payload: BackendTrackedWord[]) => void;
 };
 
 function Placeholder() {
@@ -30,6 +32,8 @@ export function TrackedChangesEditor({
   currentUserName = 'Current user',
   initialText = '',
   initialWords,
+  onSaveAccepted,
+  onSaveChanges,
 }: TrackedChangesEditorProps) {
   const [acceptedText, setAcceptedText] = useState(
     initialWords ? getAcceptedTextFromBackendWords(initialWords) : initialText,
@@ -65,7 +69,7 @@ export function TrackedChangesEditor({
       <LexicalComposer initialConfig={initialConfig}>
         <div className="editor-layout">
           <div className="editor-main">
-            <ToolbarPlugin />
+            <ToolbarPlugin onSaveAccepted={onSaveAccepted} onSaveChanges={onSaveChanges} />
             <div className="editor-inner">
               <RichTextPlugin
                 contentEditable={<ContentEditable className="editor-input" />}

@@ -19,6 +19,7 @@ import { $createTrackTextNode, $isTrackTextNode, type TrackStatus } from './Trac
 export type BaseChar = {
   char: string;
   createdBy: string;
+  deletedBy: string | null;
   format: number;
   statusHint: TrackStatus;
   style: string;
@@ -43,6 +44,7 @@ type DiffCell = {
 
 type InternalSegment = {
   createdBy: string;
+  deletedBy: string | null;
   format: number;
   formatChanged: boolean;
   originalFormat: number | null;
@@ -58,8 +60,17 @@ const DEFAULT_CREATED_BY = 'Unknown';
 
 export type BackendTrackedWord = {
   created_by: string;
+  deleted_by?: string | null;
   type: TrackStatus;
   word: string;
+};
+
+type TokenKind = 'newline' | 'whitespace' | 'word';
+
+type BaseToken = {
+  chars: BaseChar[];
+  kind: TokenKind;
+  text: string;
 };
 
 function stripCaretAnchor(text: string): string {
@@ -131,14 +142,103 @@ function createDiffTable(original: BaseChar[], current: BaseChar[]): DiffCell[][
   return table;
 }
 
-type BuildTrackedCharsOptions = {
-  insertedCreatedBy: string;
-};
+function getTokenKind(char: string): TokenKind {
+  if (char === '\n') {
+    return 'newline';
+  }
 
-export function buildTrackedChars(
+  if (/\s/.test(char)) {
+    return 'whitespace';
+  }
+
+  return 'word';
+}
+
+function tokenizeChars(chars: BaseChar[]): BaseToken[] {
+  const tokens: BaseToken[] = [];
+
+  for (const char of chars) {
+    const kind = getTokenKind(char.char);
+
+    if (kind === 'newline') {
+      tokens.push({
+        chars: [char],
+        kind,
+        text: char.char,
+      });
+      continue;
+    }
+
+    const previousToken = tokens[tokens.length - 1];
+    if (previousToken && previousToken.kind === kind) {
+      previousToken.chars.push(char);
+      previousToken.text += char.char;
+      continue;
+    }
+
+    tokens.push({
+      chars: [char],
+      kind,
+      text: char.char,
+    });
+  }
+
+  return tokens;
+}
+
+function isInsertedToken(token: BaseToken): boolean {
+  return token.chars.length > 0 && token.chars.every((char) => char.statusHint === 'inserted');
+}
+
+function canTreatTokenAsRetained(original: BaseToken, current: BaseToken): boolean {
+  if (isInsertedToken(current)) {
+    return false;
+  }
+
+  return original.kind === current.kind && original.text === current.text;
+}
+
+function getLcsLengthForText(left: string, right: string): number {
+  const rows = left.length + 1;
+  const cols = right.length + 1;
+  const table = Array.from({ length: rows }, () => Array.from({ length: cols }, () => 0));
+
+  for (let i = left.length - 1; i >= 0; i -= 1) {
+    for (let j = right.length - 1; j >= 0; j -= 1) {
+      if (left[i] === right[j]) {
+        table[i][j] = table[i + 1][j + 1] + 1;
+      } else {
+        table[i][j] = Math.max(table[i + 1][j], table[i][j + 1]);
+      }
+    }
+  }
+
+  return table[0][0];
+}
+
+function shouldAlignTokensForCharacterTracking(original: BaseToken, current: BaseToken): boolean {
+  if (original.kind !== 'word' || current.kind !== 'word') {
+    return false;
+  }
+
+  if (isInsertedToken(current)) {
+    return false;
+  }
+
+  const lcsLength = getLcsLengthForText(original.text, current.text);
+  const longestLength = Math.max(original.text.length, current.text.length);
+
+  if (longestLength === 0) {
+    return false;
+  }
+
+  return lcsLength / longestLength >= 0.6;
+}
+
+function buildTrackedCharsByChar(
   original: BaseChar[],
   current: BaseChar[],
-  options: BuildTrackedCharsOptions = { insertedCreatedBy: DEFAULT_CREATED_BY },
+  options: BuildTrackedCharsOptions,
 ): TrackedChar[] {
   const table = createDiffTable(original, current);
   const tracked: TrackedChar[] = [];
@@ -153,6 +253,7 @@ export function buildTrackedChars(
       tracked.push({
         char: current[j].char,
         createdBy: current[j].createdBy || original[i].createdBy,
+        deletedBy: null,
         format: current[j].format,
         formatChanged: current[j].format !== original[i].format || style !== originalStyle,
         originalFormat: original[i].format,
@@ -173,6 +274,7 @@ export function buildTrackedChars(
           current[j].statusHint === 'inserted'
             ? current[j].createdBy
             : options.insertedCreatedBy,
+        deletedBy: null,
         format: current[j].format,
         formatChanged: false,
         originalFormat: null,
@@ -188,6 +290,7 @@ export function buildTrackedChars(
     tracked.push({
       char: original[i].char,
       createdBy: original[i].createdBy,
+      deletedBy: original[i].deletedBy ?? options.deletedBy,
       format: original[i].format,
       formatChanged: false,
       originalFormat: original[i].format,
@@ -203,6 +306,7 @@ export function buildTrackedChars(
     tracked.push({
       char: original[i].char,
       createdBy: original[i].createdBy,
+      deletedBy: original[i].deletedBy ?? options.deletedBy,
       format: original[i].format,
       formatChanged: false,
       originalFormat: original[i].format,
@@ -221,6 +325,7 @@ export function buildTrackedChars(
         current[j].statusHint === 'inserted'
           ? current[j].createdBy
           : options.insertedCreatedBy,
+      deletedBy: null,
       format: current[j].format,
       formatChanged: false,
       originalFormat: null,
@@ -229,6 +334,78 @@ export function buildTrackedChars(
       statusHint: 'inserted',
       style: normalizeStyle(current[j].style),
     });
+    j += 1;
+  }
+
+  return tracked;
+}
+
+type BuildTrackedCharsOptions = {
+  deletedBy: string;
+  insertedCreatedBy: string;
+};
+
+export function buildTrackedChars(
+  original: BaseChar[],
+  current: BaseChar[],
+  options: BuildTrackedCharsOptions = {
+    deletedBy: DEFAULT_CREATED_BY,
+    insertedCreatedBy: DEFAULT_CREATED_BY,
+  },
+): TrackedChar[] {
+  const originalTokens = tokenizeChars(original);
+  const currentTokens = tokenizeChars(current);
+  const tracked: TrackedChar[] = [];
+
+  let i = 0;
+  let j = 0;
+
+  while (i < originalTokens.length && j < currentTokens.length) {
+    const originalToken = originalTokens[i];
+    const currentToken = currentTokens[j];
+
+    if (canTreatTokenAsRetained(originalToken, currentToken)) {
+      tracked.push(...buildTrackedCharsByChar(originalToken.chars, currentToken.chars, options));
+      i += 1;
+      j += 1;
+      continue;
+    }
+
+    const nextOriginalMatchesCurrent =
+      i + 1 < originalTokens.length && canTreatTokenAsRetained(originalTokens[i + 1], currentToken);
+    const originalMatchesNextCurrent =
+      j + 1 < currentTokens.length && canTreatTokenAsRetained(originalToken, currentTokens[j + 1]);
+
+    if (isInsertedToken(currentToken) || (!nextOriginalMatchesCurrent && originalMatchesNextCurrent)) {
+      tracked.push(...buildTrackedCharsByChar([], currentToken.chars, options));
+      j += 1;
+      continue;
+    }
+
+    if (nextOriginalMatchesCurrent && !originalMatchesNextCurrent) {
+      tracked.push(...buildTrackedCharsByChar(originalToken.chars, [], options));
+      i += 1;
+      continue;
+    }
+
+    if (shouldAlignTokensForCharacterTracking(originalToken, currentToken)) {
+      tracked.push(...buildTrackedCharsByChar(originalToken.chars, currentToken.chars, options));
+      i += 1;
+      j += 1;
+      continue;
+    }
+
+    tracked.push(...buildTrackedCharsByChar(originalToken.chars, [], options));
+    i += 1;
+  }
+
+  while (i < originalTokens.length) {
+    tracked.push(...buildTrackedCharsByChar(originalTokens[i].chars, [], options));
+    i += 1;
+  }
+
+  while (j < currentTokens.length) {
+    tracked.push(...buildTrackedCharsByChar([], currentTokens[j].chars, options));
     j += 1;
   }
 
@@ -257,6 +434,7 @@ function collectCharsFromNode(node: LexicalNode, mode: CollectionMode, chars: Ba
       chars.push({
         char,
         createdBy: isTrackNode ? node.getCreatedBy() : DEFAULT_CREATED_BY,
+        deletedBy: isTrackNode ? node.getDeletedBy() : null,
         format: node.getFormat(),
         statusHint: trackStatus,
         style: normalizeStyle(node.getStyle()),
@@ -283,6 +461,7 @@ export function collectAcceptedChars(): BaseChar[] {
       chars.push({
         char: '\n',
         createdBy: DEFAULT_CREATED_BY,
+        deletedBy: null,
         format: 0,
         statusHint: 'retained',
         style: '',
@@ -304,6 +483,7 @@ export function collectOriginalChars(): BaseChar[] {
       chars.push({
         char: '\n',
         createdBy: DEFAULT_CREATED_BY,
+        deletedBy: null,
         format: 0,
         statusHint: 'retained',
         style: '',
@@ -466,6 +646,7 @@ function shouldSplitSegment(previous: TrackedChar | null, current: TrackedChar):
   if (
     previous.status !== current.status ||
     previous.createdBy !== current.createdBy ||
+    previous.deletedBy !== current.deletedBy ||
     previous.format !== current.format ||
     previous.style !== current.style ||
     previous.formatChanged !== current.formatChanged ||
@@ -519,6 +700,7 @@ function groupParagraphSegments(chars: TrackedChar[]): InternalSegment[] {
     ) {
       segments.push({
         createdBy: trackedChar.createdBy,
+        deletedBy: trackedChar.deletedBy,
         format: trackedChar.format,
         formatChanged: trackedChar.formatChanged,
         originalFormat: trackedChar.originalFormat,
@@ -555,6 +737,7 @@ export function applyTrackedDocument(trackedChars: TrackedChar[]): void {
         segment.status,
         segment.formatChanged,
         segment.createdBy,
+        segment.deletedBy,
       );
       node.setFormat(segment.format);
       node.setStyle(segment.style);
@@ -565,7 +748,7 @@ export function applyTrackedDocument(trackedChars: TrackedChar[]): void {
     }
 
     if (hasAnyTrackedContent && !hasEditableContent) {
-      paragraph.append($createTrackTextNode(CARET_ANCHOR, 'retained', false, DEFAULT_CREATED_BY, true));
+      paragraph.append($createTrackTextNode(CARET_ANCHOR, 'retained', false, DEFAULT_CREATED_BY, null, true));
     }
 
     root.append(paragraph);
@@ -749,19 +932,25 @@ export function initializeDocumentFromBackendWords(words: BackendTrackedWord[]):
     text: string,
     type: TrackStatus,
     createdBy: string,
+    deletedBy: string | null,
     addTrailingSpace: boolean,
   ): void => {
     if (text.length > 0) {
-      paragraph.append($createTrackTextNode(text, type, false, createdBy || DEFAULT_CREATED_BY));
+      paragraph.append(
+        $createTrackTextNode(text, type, false, createdBy || DEFAULT_CREATED_BY, deletedBy),
+      );
     }
 
     if (addTrailingSpace) {
-      paragraph.append($createTrackTextNode(' ', type, false, createdBy || DEFAULT_CREATED_BY));
+      paragraph.append(
+        $createTrackTextNode(' ', type, false, createdBy || DEFAULT_CREATED_BY, deletedBy),
+      );
     }
   };
 
   words.forEach((entry, index) => {
     const createdBy = entry.created_by || DEFAULT_CREATED_BY;
+    const deletedBy = entry.deleted_by ?? null;
     const parts = entry.word.split('\n');
 
     parts.forEach((part, partIndex) => {
@@ -772,7 +961,7 @@ export function initializeDocumentFromBackendWords(words: BackendTrackedWord[]):
         typeof nextEntry !== 'undefined' &&
         !entry.word.endsWith('\n');
 
-      appendToken(part, entry.type, createdBy, hasNextWordOnSameLine && part.length > 0);
+      appendToken(part, entry.type, createdBy, deletedBy, hasNextWordOnSameLine && part.length > 0);
 
       if (endsParagraph) {
         paragraph = $createParagraphNode();
@@ -798,6 +987,122 @@ export function getAcceptedTextFromBackendWords(words: BackendTrackedWord[]): st
     .replace(/ \n/g, '\n')
     .replace(/\n /g, '\n')
     .trimEnd();
+}
+
+type SaveTrackedChar = {
+  char: string;
+  createdBy: string;
+  deletedBy: string | null;
+  status: TrackStatus;
+};
+
+export function collectTrackedCharsForSave(): SaveTrackedChar[] {
+  const root = $getRoot();
+  const paragraphs = root.getChildren().filter($isParagraphNode);
+  const chars: SaveTrackedChar[] = [];
+
+  paragraphs.forEach((paragraph, paragraphIndex) => {
+    for (const child of paragraph.getChildren()) {
+      if (!$isTextNode(child)) {
+        continue;
+      }
+
+      if ($isTrackTextNode(child) && child.isAnchor() && stripCaretAnchor(child.getTextContent()).length === 0) {
+        continue;
+      }
+
+      const trackStatus = $isTrackTextNode(child) ? child.getTrackStatus() : 'retained';
+      const createdBy = $isTrackTextNode(child) ? child.getCreatedBy() : DEFAULT_CREATED_BY;
+      const deletedBy = $isTrackTextNode(child) ? child.getDeletedBy() : null;
+      const text = getAcceptedTextForTextNode(child);
+
+      for (const char of text) {
+        chars.push({
+          char: trackStatus === 'deleted' && char === DELETED_NEWLINE_GLYPH ? '\n' : char,
+          createdBy,
+          deletedBy,
+          status: trackStatus,
+        });
+      }
+    }
+
+    if (paragraphIndex < paragraphs.length - 1) {
+      chars.push({
+        char: '\n',
+        createdBy: DEFAULT_CREATED_BY,
+        deletedBy: null,
+        status: 'retained',
+      });
+    }
+  });
+
+  return chars;
+}
+
+export function serializeTrackedWordsForBackend(): BackendTrackedWord[] {
+  const chars = collectTrackedCharsForSave();
+  const words: BackendTrackedWord[] = [];
+  let currentWord = '';
+  let currentType: TrackStatus | null = null;
+  let currentCreatedBy = DEFAULT_CREATED_BY;
+  let currentDeletedBy: string | null = null;
+
+  const flush = () => {
+    if (!currentWord || currentType === null) {
+      return;
+    }
+
+    words.push({
+      created_by: currentCreatedBy,
+      deleted_by: currentType === 'deleted' ? currentDeletedBy : null,
+      type: currentType,
+      word: currentWord,
+    });
+
+    currentWord = '';
+    currentType = null;
+    currentCreatedBy = DEFAULT_CREATED_BY;
+    currentDeletedBy = null;
+  };
+
+  for (const char of chars) {
+    if (char.char === '\n') {
+      flush();
+      if (words.length > 0) {
+        words[words.length - 1].word += '\n';
+      } else {
+        words.push({
+          created_by: char.createdBy,
+          deleted_by: char.status === 'deleted' ? char.deletedBy : null,
+          type: char.status,
+          word: '\n',
+        });
+      }
+      continue;
+    }
+
+    if (/\s/.test(char.char)) {
+      flush();
+      continue;
+    }
+
+    const sameBucket =
+      currentType === char.status &&
+      currentCreatedBy === char.createdBy &&
+      currentDeletedBy === char.deletedBy;
+
+    if (!sameBucket) {
+      flush();
+      currentType = char.status;
+      currentCreatedBy = char.createdBy;
+      currentDeletedBy = char.deletedBy;
+    }
+
+    currentWord += char.char;
+  }
+
+  flush();
+  return words;
 }
 
 export function getAcceptedText(): string {

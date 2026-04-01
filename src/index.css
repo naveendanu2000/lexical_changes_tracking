@@ -95,6 +95,10 @@ textarea {
   align-items: center;
 }
 
+.toolbar-actions {
+  margin-left: auto;
+}
+
 .toolbar-button {
   border: 1px solid rgba(26, 47, 72, 0.16);
   background: #fff;
@@ -113,6 +117,17 @@ textarea {
 .toolbar-button.is-active {
   background: #d9ebff;
   border-color: #7ca7d9;
+}
+
+.toolbar-button--accent {
+  background: #16324f;
+  color: #f8fafc;
+  border-color: #16324f;
+}
+
+.toolbar-button--accent:hover {
+  background: #102538;
+  border-color: #102538;
 }
 
 .toolbar-color {
@@ -296,6 +311,35 @@ textarea {
   background: rgba(26, 47, 72, 0.06);
 }
 
+.payload-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.payload-card {
+  border: 1px solid rgba(26, 47, 72, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 16px;
+}
+
+.payload-title {
+  margin: 0 0 10px;
+  font-weight: 700;
+}
+
+.payload-card pre {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.88rem;
+  color: #36495a;
+}
+
 @media (max-width: 720px) {
   .hero-card {
     padding: 20px;
@@ -317,6 +361,10 @@ textarea {
     min-width: 0;
     border-left: none;
     border-top: 1px solid rgba(26, 47, 72, 0.08);
+  }
+
+  .payload-grid {
+    grid-template-columns: 1fr;
   }
 
   .editor-input {

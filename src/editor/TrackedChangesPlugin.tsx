@@ -39,6 +39,7 @@ export function TrackedChangesPlugin({
         baselineRef.current = originalChars;
         currentAcceptedRef.current = acceptedChars;
         const tracked = buildTrackedChars(originalChars, acceptedChars, {
+          deletedBy: currentUserName,
           insertedCreatedBy: currentUserName,
         });
         applyTrackedDocument(tracked);
@@ -83,6 +84,7 @@ export function TrackedChangesPlugin({
       }
 
       const tracked = buildTrackedChars(baseline, nextChars, {
+        deletedBy: currentUserName,
         insertedCreatedBy: currentUserName,
       });
       const counts = tracked.reduce(
